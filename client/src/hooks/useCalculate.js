@@ -80,7 +80,7 @@ export function useRobustness() {
     notifications.show({
       id: "robustness-running",
       title: "Running Robustness Study",
-      message: "Evaluating 19,683 stiffness combinations × 3 tolerances (~10-30s)…",
+      message: "Evaluating 512 stiffness corner cases × 3 tolerances…",
       color: "blue",
       loading: true,
       autoClose: false,
@@ -127,16 +127,22 @@ export function useRobustness() {
 
 function coerceNumerics(form) {
   return {
-    ...form,
     mass: Number(form.mass),
     cg: form.cg.map(Number),
     inertia: form.inertia.map((row) => row.map(Number)),
     torque: Number(form.torque),
     dynamic_stiffness_factor: Number(form.dynamic_stiffness_factor),
     mounts: form.mounts.map((m) => ({
-      ...m,
-      x: Number(m.x), y: Number(m.y), z: Number(m.z),
-      kx: Number(m.kx), ky: Number(m.ky), kz: Number(m.kz),
+      name: m.name,
+      x: Number(m.x),
+      y: Number(m.y),
+      z: Number(m.z),
+      kx: Number(m.kx),
+      ky: Number(m.ky),
+      kz: Number(m.kz),
+      roll: Number(m.roll || 0),
+      pitch: Number(m.pitch || 0),
+      yaw: Number(m.yaw || 0),
     })),
   };
 }

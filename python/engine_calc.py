@@ -187,7 +187,8 @@ def evaluate_stiffness_case(stiffness_values, mounts, M_inv_sqrt, M_SI, S,
 def run_exhaustive_robustness(tolerance, nominal_stiffnesses, mounts, M_inv_sqrt,
                                M_SI, S, DOF_NAMES, DYNAMIC_STIFFNESS_FACTOR,
                                ROBUSTNESS_PURITY_LIMIT=80.0):
-    levels = np.array([-tolerance, 0.0, tolerance])
+    # Exact 512-corner robustness study (2^9 corners: lower -tol and upper +tol, ignoring nominal 0.0)
+    levels = np.array([-tolerance, tolerance])
     total_cases = 0
     pass_cases = 0
     worst_min_purity = np.inf

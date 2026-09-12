@@ -18,7 +18,9 @@ const mountSchema = Joi.object({
   roll: Joi.number().optional().default(0),
   pitch: Joi.number().optional().default(0),
   yaw: Joi.number().optional().default(0),
-});
+  _id: Joi.any().optional(),
+  id: Joi.any().optional(),
+}).unknown(true);
 
 const inertiaRowSchema = Joi.array().items(Joi.number()).length(3);
 
@@ -82,7 +84,13 @@ const calculateSchema = Joi.object({
   }),
 
   run_robustness: Joi.boolean().default(false),
-});
+  _id: Joi.any().optional(),
+  id: Joi.any().optional(),
+  calculation_id: Joi.any().optional(),
+  createdAt: Joi.any().optional(),
+  updatedAt: Joi.any().optional(),
+  __v: Joi.any().optional(),
+}).unknown(true);
 
 /**
  * Express middleware factory.
@@ -93,6 +101,7 @@ function validate(schema) {
     const { error, value } = schema.validate(req.body, {
       abortEarly: false,
       convert: true,
+      stripUnknown: true,
     });
 
     if (error) {

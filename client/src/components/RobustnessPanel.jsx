@@ -28,10 +28,10 @@ export function RobustnessPanel({ robustnessData, isLoading, error }) {
           <IconChartDots className="spin" size={20} color="var(--mantine-color-teal-4)" />
           <div>
             <Text size="sm" fw={700}>
-              Evaluating Exhaustive Mount Stiffness Robustness...
+              Evaluating 512-Corner Mount Stiffness Robustness (2⁹)...
             </Text>
             <Text size="xs" c="dimmed">
-              Scanning thousands of 3-level perturbation combinations (±5%, ±10%). This takes 10–25s.
+              Scanning all 2⁹ = 512 upper and lower limit stiffness corner combinations (±5%, ±10%, ±15%).
             </Text>
           </div>
         </Group>
@@ -69,7 +69,7 @@ export function RobustnessPanel({ robustnessData, isLoading, error }) {
             </Text>
           </Group>
           <Badge color="teal" variant="outline" size="sm">
-            Exhaustive Sensitivity
+            512 Corners (2⁹)
           </Badge>
         </Group>
 

@@ -12,7 +12,19 @@ const useStore = create((set, get) => ({
 
   resetForm: () => set({ form: getDefaults() }),
 
-  loadFromHistory: (inputs) => set({ form: JSON.parse(JSON.stringify(inputs)) }),
+  loadFromHistory: (inputs) => {
+    if (!inputs) return;
+    const clean = JSON.parse(JSON.stringify(inputs));
+    if (Array.isArray(clean.mounts)) {
+      clean.mounts = clean.mounts.map(({ _id, id, ...rest }) => rest);
+    }
+    delete clean._id;
+    delete clean.id;
+    delete clean.__v;
+    delete clean.createdAt;
+    delete clean.updatedAt;
+    set({ form: clean });
+  },
 
   // Helper: update a single mount field
   updateMount: (index, field, value) =>

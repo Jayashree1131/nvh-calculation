@@ -133,7 +133,7 @@ export function InputPanel() {
                 boxShadow: "0 4px 12px rgba(31, 111, 235, 0.3)",
               }}
             >
-              Calculate NVH
+              Calculate 6 DOF
             </Button>
             <Button
               size="md"
@@ -338,8 +338,7 @@ export function InputPanel() {
                 loading={isCalculating}
                 onClick={calculate}
               >
-                Calculate NVH
-              </Button>
+                Calculate 6 DOF              </Button>
               <Button
                 size="md"
                 variant="light"

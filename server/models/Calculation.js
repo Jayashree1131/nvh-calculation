@@ -14,15 +14,21 @@ const CalculationSchema = new mongoose.Schema(
       torque: Number,
       dynamic_stiffness_factor: Number,
       mounts: [
-        {
-          name: String,
-          x: Number,
-          y: Number,
-          z: Number,
-          kx: Number,
-          ky: Number,
-          kz: Number,
-        },
+        new mongoose.Schema(
+          {
+            name: String,
+            x: Number,
+            y: Number,
+            z: Number,
+            kx: Number,
+            ky: Number,
+            kz: Number,
+            roll: { type: Number, default: 0 },
+            pitch: { type: Number, default: 0 },
+            yaw: { type: Number, default: 0 },
+          },
+          { _id: false }
+        ),
       ],
     },
     outputs: {
