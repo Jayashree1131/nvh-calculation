@@ -1,4 +1,4 @@
-import { Table, Badge, Text, Paper, Tooltip } from "@mantine/core";
+import { Table, Badge, Text, Paper, Tooltip, Group } from "@mantine/core";
 
 const PLANES = [
   { key: "YZ", label: "YZ (Front View)", primary: true },
@@ -28,14 +28,16 @@ export default function ProjectedGeometryTable({ result }) {
         style={primary ? { background: "rgba(99, 102, 241, 0.08)" } : undefined}
       >
         <Table.Td>
-          <Text fw={primary ? 700 : 400} size="sm">
-            {label}
+          <Group gap="xs" wrap="nowrap">
+            <Text fw={primary ? 700 : 400} size="sm">
+              {label}
+            </Text>
             {primary && (
-              <Badge ml={6} size="xs" color="violet" variant="filled">
+              <Badge size="xs" color="violet" variant="filled">
                 Primary
               </Badge>
             )}
-          </Text>
+          </Group>
         </Table.Td>
         <Table.Td>{angleBadge(p.misalignment_deg)}</Table.Td>
         <Table.Td>
