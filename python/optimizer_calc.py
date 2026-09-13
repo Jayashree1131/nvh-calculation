@@ -285,12 +285,39 @@ def _single_robust(proposal, multipliers, CG, MASS, INERTIA, DYNAMIC_FACTOR,
                 "identity_pass": False, "pass": False}
 
 
+EXACT_SIGNS_9D = np.asarray(
+    np.meshgrid(*([[-1.0, 1.0]] * 9), indexing="ij")
+).reshape(9, -1).T  # Shape: (512, 9)
+
+
 def run_design_robustness(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR,
                           EXPECTED_MODE_NAMES, TOLERANCES, RANDOM_CASES,
-                          RANDOM_SEED, ROB_PURITY_MIN):
-    exact_signs = np.asarray(
-        np.meshgrid(*([[-1.0, 1.0]] * 9), indexing="ij")
-    ).reshape(9, -1).T
+                          RANDOM_SEED, ROB_PURITY_MIN, precomputed=None):
+    if precomputed is not None:
+        L = precomputed["L"]
+        M = precomputed["M"]
+        S = precomputed["S"]
+    else:
+        S = np.diag([1000., 1000., 1000., 1., 1., 1.])
+        M = np.zeros((6, 6))
+        M[:3, :3] = MASS * np.eye(3)
+        M[3:, 3:] = INERTIA / 1e6
+        L = np.linalg.cholesky(M)
+
+    # Precompute the 9 component basis matrices H = [H_0, ..., H_8]
+    # Each H_i corresponds to the contribution of nominal stiffness k_i to standard-form A
+    H = []
+    for m in proposal.mounts:
+        r = m.xyz - CG
+        B = B_matrix(r)
+        for j in range(3):
+            bj = B[j:j+1, :]
+            Gj = (DYNAMIC_FACTOR / 1000.0) * (S.T @ (bj.T @ bj) @ S)
+            Aj = np.linalg.solve(L, Gj)
+            Aj = np.linalg.solve(L, Aj.T).T
+            Aj = (Aj + Aj.T) / 2.0
+            H.append(m.k[j] * Aj)
+    H = np.array(H)  # (9, 6, 6)
 
     seed_offset = sum(ord(c) for c in proposal.name)
     rng = np.random.default_rng(RANDOM_SEED + seed_offset)
@@ -298,36 +325,49 @@ def run_design_robustness(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR,
 
     for tol in TOLERANCES:
         t = float(tol) / 100.0
-        exact_pass, exact_min = 0, np.inf
-        for signs in exact_signs:
-            mults = (1.0 + t * signs).reshape(3, 3)
-            r = _single_robust(proposal, mults, CG, MASS, INERTIA, DYNAMIC_FACTOR,
-                               EXPECTED_MODE_NAMES, ROB_PURITY_MIN)
-            if r["pass"]:
-                exact_pass += 1
-            if r["purity"] < exact_min:
-                exact_min = r["purity"]
 
-        random_mult = rng.uniform(1.0 - t, 1.0 + t, size=(RANDOM_CASES, 9))
-        rand_pass, rand_min = 0, np.inf
-        for idx in range(RANDOM_CASES):
-            mults = random_mult[idx].reshape(3, 3)
-            r = _single_robust(proposal, mults, CG, MASS, INERTIA, DYNAMIC_FACTOR,
-                               EXPECTED_MODE_NAMES, ROB_PURITY_MIN)
-            if r["pass"]:
-                rand_pass += 1
-            if r["purity"] < rand_min:
-                rand_min = r["purity"]
+        # 1. Exact 512 corners (vectorized batch BLAS)
+        mults_exact = 1.0 + t * EXACT_SIGNS_9D  # (512, 9)
+        A_exact = np.tensordot(mults_exact, H, axes=([1], [0]))  # (512, 6, 6)
+        _, V_exact = np.linalg.eigh(A_exact)
+        phi_exact = np.linalg.solve(L.T, V_exact)  # (512, 6, 6)
+        M_phi = np.matmul(M, phi_exact)  # (512, 6, 6)
+        gm = np.sum(phi_exact * M_phi, axis=1, keepdims=True)  # (512, 1, 6)
+        gm = np.maximum(gm, 1e-20)
+        phi_exact = phi_exact / np.sqrt(gm)
+        M_phi = np.matmul(M, phi_exact)
+        energy_exact = 100.0 * np.abs(phi_exact * M_phi)
+        purity_all_modes = np.max(energy_exact, axis=1)  # (512, 6)
+        min_purity_exact = np.min(purity_all_modes, axis=1)  # (512,)
+
+        exact_pass = int(np.sum(min_purity_exact >= ROB_PURITY_MIN))
+        exact_min = float(np.min(min_purity_exact))
+
+        # 2. Random Monte Carlo perturbations (vectorized batch BLAS)
+        mults_rand = rng.uniform(1.0 - t, 1.0 + t, size=(RANDOM_CASES, 9))
+        A_rand = np.tensordot(mults_rand, H, axes=([1], [0]))  # (RANDOM_CASES, 6, 6)
+        _, V_rand = np.linalg.eigh(A_rand)
+        phi_rand = np.linalg.solve(L.T, V_rand)
+        M_phi_rand = np.matmul(M, phi_rand)
+        gm_rand = np.maximum(np.sum(phi_rand * M_phi_rand, axis=1, keepdims=True), 1e-20)
+        phi_rand = phi_rand / np.sqrt(gm_rand)
+        M_phi_rand = np.matmul(M, phi_rand)
+        energy_rand = 100.0 * np.abs(phi_rand * M_phi_rand)
+        purity_all_rand = np.max(energy_rand, axis=1)
+        min_purity_rand = np.min(purity_all_rand, axis=1)
+
+        rand_pass = int(np.sum(min_purity_rand >= ROB_PURITY_MIN))
+        rand_min = float(np.min(min_purity_rand))
 
         out[float(tol)] = {
             "exact_total": 512,
             "exact_pass": exact_pass,
             "exact_pass_percent": 100.0 * exact_pass / 512.0,
-            "exact_min_purity": float(exact_min),
+            "exact_min_purity": exact_min,
             "random_total": RANDOM_CASES,
             "random_pass": rand_pass,
             "random_pass_percent": 100.0 * rand_pass / RANDOM_CASES,
-            "random_min_purity": float(rand_min),
+            "random_min_purity": rand_min,
         }
     return out
 
@@ -394,26 +434,75 @@ def _candidate_bounds(pos_limits, axes, stiffness_fraction,
 
 def _score(proposal, axes, objective, CG, MASS, INERTIA, DYNAMIC_FACTOR,
            FREQ_MIN, FREQ_MAX, PURITY_MIN, PURITY_TARGET,
-           GAP12_MIN, GAP_OTHER_MIN, EXPECTED_MODE_NAMES):
+           GAP12_MIN, GAP_OTHER_MIN, EXPECTED_MODE_NAMES,
+           precomputed=None):
     try:
-        modal = modal_analysis(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR)
-        freq = modal["freq"]
-        purity = modal["purity"]
-        gaps = modal["gaps"]
-        tra = calculate_TRA(INERTIA, np.array([0., 1., 0.]))
-        etra, _ = calculate_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR)
+        if precomputed is not None:
+            L = precomputed["L"]
+            M = precomputed["M"]
+            S = precomputed["S"]
+            tra = precomputed["tra"]
+        else:
+            S = np.diag([1000., 1000., 1000., 1., 1., 1.])
+            M = np.zeros((6, 6))
+            M[:3, :3] = MASS * np.eye(3)
+            M[3:, 3:] = INERTIA / 1e6
+            L = np.linalg.cholesky(M)
+            tra = calculate_TRA(INERTIA, np.array([0., 1., 0.]))
+
+        K_static = total_static_stiffness(proposal, CG)
+        K_dyn = DYNAMIC_FACTOR * K_static
+        K_si = S.T @ K_dyn @ S / 1000.0
+
+        A = np.linalg.solve(L, K_si)
+        A = np.linalg.solve(L, A.T).T
+        A = (A + A.T) / 2.0
+
+        eigenvalues, V = np.linalg.eigh(A)
+        eigenvalues = np.maximum(eigenvalues, 0.0)
+        order = np.argsort(eigenvalues)
+        eigenvalues = eigenvalues[order]
+        V = V[:, order]
+
+        phi = np.linalg.solve(L.T, V)
+        omega = np.sqrt(eigenvalues)
+        freq = omega / (2.0 * np.pi)
+
+        for i in range(6):
+            gm = phi[:, i].T @ M @ phi[:, i]
+            if gm > 1e-20:
+                phi[:, i] /= np.sqrt(gm)
+
+        DOF_NAMES = ["Tx", "Ty", "Tz", "Rx", "Ry", "Rz"]
+        energy_matrix = np.zeros((6, 6))
+        for mode in range(6):
+            q = phi[:, mode]
+            Mq = M @ q
+            total = q.T @ Mq
+            if abs(total) > 1e-20:
+                energy_matrix[mode, :] = 100.0 * (q * Mq) / total
+
+        dominant_index = np.argmax(np.abs(energy_matrix), axis=1)
+        dominant_purity = np.max(np.abs(energy_matrix), axis=1)
+        dominant_names = [DOF_NAMES[i] for i in dominant_index]
+        gaps = np.diff(freq)
+
+        # eTRA: directly solve using already formed K_static instead of recomputing
+        F_torque = np.array([0., 0., 0., 0., 1., 0.])
+        q_torque = np.linalg.solve(K_static, F_torque)
+        etra = normalize(q_torque[3:6])
         angle = true_3d_angle(tra, etra)
 
         penalty = 0.0
         penalty += 500.0 * np.sum(np.maximum(FREQ_MIN - freq, 0.0) ** 2)
         penalty += 500.0 * np.sum(np.maximum(freq - FREQ_MAX, 0.0) ** 2)
-        penalty += 250.0 * np.sum(np.maximum(PURITY_MIN - purity, 0.0) ** 2)
+        penalty += 250.0 * np.sum(np.maximum(PURITY_MIN - dominant_purity, 0.0) ** 2)
         if len(gaps):
             penalty += 350.0 * max(GAP12_MIN - gaps[0], 0.0) ** 2
             penalty += 350.0 * np.sum(np.maximum(GAP_OTHER_MIN - gaps[1:], 0.0) ** 2)
-        penalty += sum(250.0 for a, b in zip(modal["dominant"], EXPECTED_MODE_NAMES) if a != b)
+        penalty += sum(250.0 for a, b in zip(dominant_names, EXPECTED_MODE_NAMES) if a != b)
 
-        min_purity = float(np.min(purity))
+        min_purity = float(np.min(dominant_purity))
         if objective in ("tra_alignment", "tra_alignment_current"):
             score = 25.0 * angle + 1.5 * max(PURITY_TARGET - min_purity, 0.0) ** 2
         elif objective == "energy_decoupling":
@@ -434,7 +523,7 @@ def optimize_case(case_cfg, n_proposals, CG, MASS, INERTIA, DYNAMIC_FACTOR,
                   GAP12_MIN, GAP_OTHER_MIN, EXPECTED_MODE_NAMES,
                   VOID_SOLID_MIN, VOID_SOLID_MAX, VS_AXIAL_MIN, VS_AXIAL_MAX,
                   OPTIMIZER_MAXITER, OPTIMIZER_POPSIZE,
-                  baseline_stiffnesses, emit):
+                  baseline_stiffnesses, emit, precomputed=None):
     case_id = case_cfg["case_id"]
     pos_limits = case_cfg["position_limits"]
     axis_options = case_cfg["axis_options"]
@@ -471,7 +560,8 @@ def optimize_case(case_cfg, n_proposals, CG, MASS, INERTIA, DYNAMIC_FACTOR,
             prop.required_axes = required_axes_map
             return _score(prop, axes, objective, CG, MASS, INERTIA, DYNAMIC_FACTOR,
                           FREQ_MIN, FREQ_MAX, PURITY_MIN, PURITY_TARGET,
-                          GAP12_MIN, GAP_OTHER_MIN, EXPECTED_MODE_NAMES)
+                          GAP12_MIN, GAP_OTHER_MIN, EXPECTED_MODE_NAMES,
+                          precomputed=precomputed)
 
         result = differential_evolution(
             objective_fn, bounds,
@@ -514,14 +604,15 @@ def review_proposal(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR,
                     VOID_SOLID_MIN, VOID_SOLID_MAX, VS_AXIAL_MIN, VS_AXIAL_MAX,
                     EXPECTED_MODE_NAMES, TRA_TARGET,
                     ROBUSTNESS_TOLERANCES, ROBUSTNESS_RANDOM_CASES,
-                    ROBUSTNESS_RANDOM_SEED, ROBUSTNESS_PURITY_MIN):
+                    ROBUSTNESS_RANDOM_SEED, ROBUSTNESS_PURITY_MIN,
+                    precomputed=None):
     modal = modal_analysis(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR)
     freq = modal["freq"]
     purity = modal["purity"]
     dominant = modal["dominant"]
     gaps = modal["gaps"]
 
-    tra = calculate_TRA(INERTIA, CRANK_AXIS)
+    tra = precomputed["tra"] if precomputed is not None else calculate_TRA(INERTIA, CRANK_AXIS)
     etra, _ = calculate_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR, stiffness_factor=1.0)
     etra_dynamic, _ = calculate_dynamic_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR)
     angle_3d = true_3d_angle(tra, etra)
@@ -567,7 +658,8 @@ def review_proposal(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR,
     robustness = run_design_robustness(
         proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR,
         EXPECTED_MODE_NAMES, ROBUSTNESS_TOLERANCES,
-        ROBUSTNESS_RANDOM_CASES, ROBUSTNESS_RANDOM_SEED, ROBUSTNESS_PURITY_MIN
+        ROBUSTNESS_RANDOM_CASES, ROBUSTNESS_RANDOM_SEED, ROBUSTNESS_PURITY_MIN,
+        precomputed=precomputed
     )
 
     # Verdict
@@ -794,6 +886,15 @@ def run_optimizer(inputs):
     case_cfgs = [c for c in all_case_cfgs if c["case_id"] in ENABLED_CASES]
     total_cases = len(case_cfgs)
 
+    # ── Precompute engine constants once (M, L, S, TRA) ─────────
+    S = np.diag([1000., 1000., 1000., 1., 1., 1.])
+    M = np.zeros((6, 6))
+    M[:3, :3] = MASS * np.eye(3)
+    M[3:, 3:] = INERTIA / 1e6
+    L = np.linalg.cholesky(M)
+    tra_dir = calculate_TRA(INERTIA, CRANK_AXIS)
+    precomputed = {"M": M, "L": L, "S": S, "tra": tra_dir}
+
     emit_progress("Starting optimizer…", pct=0)
 
     # ── Run each case ──────────────────────────────────────────
@@ -814,7 +915,8 @@ def run_optimizer(inputs):
             FREQ_MIN, FREQ_MAX, PURITY_MIN, PURITY_TARGET,
             GAP12_MIN, GAP_OTHER_MIN, EXPECTED_MODE_NAMES,
             VOID_SOLID_MIN, VOID_SOLID_MAX, VS_AXIAL_MIN, VS_AXIAL_MAX,
-            MAX_ITER, POP_SIZE, baseline_stiffnesses, emit
+            MAX_ITER, POP_SIZE, baseline_stiffnesses, emit,
+            precomputed=precomputed
         )
         all_proposals_raw.extend([(cfg, p) for p in proposals])
 
@@ -829,7 +931,8 @@ def run_optimizer(inputs):
             GAP12_MIN, GAP_OTHER_MIN,
             VOID_SOLID_MIN, VOID_SOLID_MAX, VS_AXIAL_MIN, VS_AXIAL_MAX,
             EXPECTED_MODE_NAMES, TRA_TARGET,
-            ROB_TOLERANCES, ROB_RANDOM_CASES, ROB_RANDOM_SEED, ROB_PURITY_MIN
+            ROB_TOLERANCES, ROB_RANDOM_CASES, ROB_RANDOM_SEED, ROB_PURITY_MIN,
+            precomputed=precomputed
         )
         r["case_id"] = cfg["case_id"]
         r["case_name"] = cfg["name"]
