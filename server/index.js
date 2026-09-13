@@ -7,6 +7,7 @@ const { PORT, MONGO_URI, CLIENT_URL, PYTHON_PATH, PYTHON_SCRIPT } = require("./c
 const calculateRouter = require("./routes/calculate").router;
 const robustnessRouter = require("./routes/robustness");
 const historyRouter = require("./routes/history");
+const optimizeRouter = require("./routes/optimize");
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use(express.json({ limit: "5mb" }));
 app.use("/api/calculate", calculateRouter);
 app.use("/api/robustness", robustnessRouter);
 app.use("/api/history", historyRouter);
+app.use("/api/optimize", optimizeRouter);
 
 // Health check
 app.get("/api/health", (req, res) => {

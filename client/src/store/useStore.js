@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { getDefaults } from "../utils/defaults";
+import { getOptimizerDefaults } from "../utils/optimizerDefaults";
 
 const useStore = create((set, get) => ({
   // ── Form state ──────────────────────────────────────────────
@@ -80,6 +81,33 @@ const useStore = create((set, get) => ({
   // ── Validation errors ───────────────────────────────────────
   validationErrors: {},
   setValidationErrors: (errors) => set({ validationErrors: errors }),
+
+  // ── Optimizer ────────────────────────────────────────────────
+  optimizerForm: getOptimizerDefaults(),
+  setOptimizerForm: (updater) =>
+    set((state) => ({
+      optimizerForm:
+        typeof updater === "function" ? updater(state.optimizerForm) : updater,
+    })),
+  resetOptimizerForm: () => set({ optimizerForm: getOptimizerDefaults() }),
+
+  optimizerState: "idle", // "idle" | "running" | "success" | "error"
+  optimizerProgress: [],  // [{message, case, total_cases, pct}, ...]
+  optimizerResult: null,
+  optimizerError: null,
+  optimizerJobId: null,
+
+  setOptimizerRunning: (jobId) =>
+    set({ optimizerState: "running", optimizerProgress: [], optimizerError: null, optimizerJobId: jobId }),
+  appendOptimizerProgress: (entry) =>
+    set((state) => ({ optimizerProgress: [...state.optimizerProgress, entry] })),
+  setOptimizerSuccess: (result) =>
+    set({ optimizerState: "success", optimizerResult: result, optimizerError: null, optimizerJobId: null }),
+  setOptimizerError: (err) =>
+    set({ optimizerState: "error", optimizerError: err, optimizerJobId: null }),
+  resetOptimizer: () =>
+    set({ optimizerState: "idle", optimizerProgress: [], optimizerResult: null,
+          optimizerError: null, optimizerJobId: null }),
 }));
 
 export default useStore;

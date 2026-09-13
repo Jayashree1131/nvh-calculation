@@ -5,7 +5,9 @@ module.exports = {
   MONGO_URI: process.env.MONGO_URI || "mongodb://localhost:27017/engine-nvh",
   PYTHON_PATH: process.env.PYTHON_PATH || "/usr/bin/python3",
   PYTHON_SCRIPT: require("path").resolve(__dirname, "../python/engine_calc.py"),
+  OPTIMIZER_SCRIPT: require("path").resolve(__dirname, "../python/optimizer_calc.py"),
   CALC_TIMEOUT_MS: parseInt(process.env.CALC_TIMEOUT_MS) || 30000,
   ROBUSTNESS_TIMEOUT_MS: parseInt(process.env.ROBUSTNESS_TIMEOUT_MS) || 120000,
+  OPTIMIZER_TIMEOUT_MS: parseInt(process.env.OPTIMIZER_TIMEOUT_MS) || 1200000, // 20 min
   CLIENT_URL: process.env.CLIENT_URL || "http://localhost:5173",
 };
