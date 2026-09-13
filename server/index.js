@@ -38,10 +38,24 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// 404 fallback
-app.use((req, res) => {
-  res.status(404).json({ status: "not_found", message: `Route ${req.method} ${req.path} not found.` });
-});
+// ── Production static assets ──────────────────────────────
+const path = require("path");
+const fs = require("fs");
+const clientDist = path.resolve(__dirname, "../client/dist");
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get("*", (req, res) => {
+    if (req.path.startsWith("/api")) {
+      return res.status(404).json({ status: "not_found", message: `API route ${req.method} ${req.path} not found.` });
+    }
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+} else {
+  // 404 fallback (API only mode or dev mode)
+  app.use((req, res) => {
+    res.status(404).json({ status: "not_found", message: `Route ${req.method} ${req.path} not found.` });
+  });
+}
 
 // Global error handler
 app.use((err, req, res, next) => {
