@@ -134,7 +134,7 @@ def fig_to_base64(fig):
     """Render a matplotlib figure to base64 PNG string."""
     import io
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
     buf.seek(0)
     b64 = base64.b64encode(buf.read()).decode("utf-8")
     plt.close(fig)
