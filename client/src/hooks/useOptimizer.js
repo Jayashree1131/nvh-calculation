@@ -2,7 +2,7 @@ import { useRef, useCallback } from "react";
 import { notifications } from "@mantine/notifications";
 import useStore from "../store/useStore";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5050";
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 export function useOptimizer() {
   const xhrRef = useRef(null);

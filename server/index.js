@@ -14,8 +14,11 @@ const app = express();
 // ── Middleware ──────────────────────────────────────────────
 app.use(
   cors({
-    origin: CLIENT_URL,
-    methods: ["GET", "POST", "PATCH", "DELETE"],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, same-origin) or any valid origin
+      callback(null, true);
+    },
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
   })
 );
