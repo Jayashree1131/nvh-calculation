@@ -146,7 +146,9 @@ def modal_analysis(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR):
 
     L = np.linalg.cholesky(M)
     A = np.linalg.solve(L, K_si)
-    A = np.linalg.solve(L.T, A.T).T
+    # For M = L L.T, the symmetric standard-form matrix is A = L^-1 K L^-T.
+    # The second solve must therefore use L, not L.T.
+    A = np.linalg.solve(L, A.T).T
     A = (A + A.T) / 2.0
 
     eigenvalues, V = np.linalg.eigh(A)
@@ -197,18 +199,27 @@ def calculate_TRA(INERTIA, CRANK_AXIS):
     return normalize(vector)
 
 
-def calculate_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR):
+def calculate_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR, stiffness_factor=1.0):
     """Returns (eTRA_unit_vector, static_displacement_6dof)."""
     K = total_static_stiffness(proposal, CG)
+    K = float(stiffness_factor) * K
     F = np.array([0., 0., 0., 0., 1., 0.])
     q = np.linalg.solve(K, F)
     theta = q[3:6]
     return normalize(theta), q
 
 
+def calculate_dynamic_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR):
+    """Return the torque-response axis using the configured dynamic factor."""
+    return calculate_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR, stiffness_factor=DYNAMIC_FACTOR)
+
+
 def true_3d_angle(a, b):
     a, b = normalize(a), normalize(b)
-    return float(np.degrees(np.arccos(np.clip(np.dot(a, b), -1.0, 1.0))))
+    # TRA and eTRA are axes, not directed arrows: +u and -u are the same
+    # physical line. Use the undirected line angle in [0, 90] degrees.
+    c = np.clip(abs(np.dot(a, b)), 0.0, 1.0)
+    return float(np.degrees(np.arccos(c)))
 
 
 def nearest_etra_point(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR):
@@ -511,8 +522,10 @@ def review_proposal(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR,
     gaps = modal["gaps"]
 
     tra = calculate_TRA(INERTIA, CRANK_AXIS)
-    etra, _ = calculate_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR)
+    etra, _ = calculate_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR, stiffness_factor=1.0)
+    etra_dynamic, _ = calculate_dynamic_eTRA(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR)
     angle_3d = true_3d_angle(tra, etra)
+    dynamic_angle_3d = true_3d_angle(tra, etra_dynamic)
     etra_point = nearest_etra_point(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR)
     offset = float(np.linalg.norm(etra_point - CG))
 
@@ -601,7 +614,9 @@ def review_proposal(proposal, CG, MASS, INERTIA, DYNAMIC_FACTOR,
         "modal": modal_table,
         "tra": tra.tolist(),
         "etra": etra.tolist(),
+        "etra_dynamic": etra_dynamic.tolist(),
         "angle_3d_deg": round(angle_3d, 4),
+        "dynamic_angle_3d_deg": round(dynamic_angle_3d, 4),
         "etra_point": etra_point.tolist(),
         "etra_offset_mm": round(offset, 3),
         "min_purity": round(float(np.min(purity)), 3),

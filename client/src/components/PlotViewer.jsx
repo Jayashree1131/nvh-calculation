@@ -23,14 +23,23 @@ import {
   IconZoomReset,
   IconArrowsMaximize,
   IconLayersSubtract,
+  IconRotate3d,
 } from "@tabler/icons-react";
+import { Interactive3DViewer } from "./Interactive3DViewer";
 
-export function PlotViewer({ plots }) {
+export function PlotViewer({ plots, calcResult, formMounts }) {
   const [zoom3d, setZoom3d] = useState(1);
   const [zoomProj, setZoomProj] = useState(1);
   const [projPlane, setProjPlane] = useState("all");
+  const [viewMode3d, setViewMode3d] = useState("interactive"); // "interactive" | "static"
+  const [modal3dMode, setModal3dMode] = useState("interactive"); // "interactive" | "static"
   const [fullscreenModal, setFullscreenModal] = useState(false);
-  const [modalData, setModalData] = useState({ src: "", title: "", filename: "" });
+  const [modalData, setModalData] = useState({
+    src: "",
+    title: "",
+    filename: "",
+    is3d: false,
+  });
 
   if (!plots || (!plots.plot_3d_base64 && !plots.plot_projected_base64)) {
     return null;
@@ -46,12 +55,16 @@ export function PlotViewer({ plots }) {
     document.body.removeChild(link);
   };
 
-  const openFullscreen = (base64Data, title, filename) => {
+  const openFullscreen = (base64Data, title, filename, is3d = false) => {
     setModalData({
-      src: `data:image/png;base64,${base64Data}`,
+      src: base64Data ? `data:image/png;base64,${base64Data}` : "",
       title,
       filename,
+      is3d,
     });
+    if (is3d) {
+      setModal3dMode("interactive");
+    }
     setFullscreenModal(true);
   };
 
@@ -85,11 +98,11 @@ export function PlotViewer({ plots }) {
                 Visualization & Geometry Plots
               </Text>
               <Badge size="xs" color="blue" variant="light">
-                Responsive High-Res
+                Interactive 3D & Responsive High-Res
               </Badge>
             </Group>
             <Text size="xs" c="dimmed">
-              Use controls to zoom, expand to full screen, or download PNG
+              Rotate in 3D, inspect full screen, or download publication-quality plots
             </Text>
           </Group>
 
@@ -107,59 +120,82 @@ export function PlotViewer({ plots }) {
             {/* ── Tab 1: 3D Plot ── */}
             <Tabs.Panel value="3d" pt="md">
               <Stack gap="xs">
-                {/* 3D Action & Zoom Toolbar */}
+                {/* 3D Action & View Switcher Toolbar */}
                 <Group justify="space-between" wrap="wrap" gap="xs">
-                  {/* Zoom Controls */}
-                  <Group gap={6}>
-                    <Text size="xs" c="dimmed" fw={600}>
-                      Zoom:
-                    </Text>
-                    <Tooltip label="Zoom Out (-25%)">
-                      <ActionIcon
-                        size="sm"
-                        variant="default"
-                        onClick={() =>
-                          setZoom3d((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))))
-                        }
-                        disabled={zoom3d <= 0.5}
-                      >
-                        <IconZoomOut size={14} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Badge
-                      size="sm"
-                      variant="light"
-                      color="blue"
-                      style={{ minWidth: 48, textAlign: "center" }}
-                    >
-                      {Math.round(zoom3d * 100)}%
-                    </Badge>
-                    <Tooltip label="Zoom In (+25%)">
-                      <ActionIcon
-                        size="sm"
-                        variant="default"
-                        onClick={() =>
-                          setZoom3d((z) => Math.min(3.0, Number((z + 0.25).toFixed(2))))
-                        }
-                        disabled={zoom3d >= 3.0}
-                      >
-                        <IconZoomIn size={14} />
-                      </ActionIcon>
-                    </Tooltip>
-                    <Tooltip label="Reset to Fit">
-                      <ActionIcon
-                        size="sm"
-                        variant="subtle"
-                        color="gray"
-                        onClick={() => setZoom3d(1)}
-                        disabled={zoom3d === 1}
-                      >
-                        <IconZoomReset size={14} />
-                      </ActionIcon>
-                    </Tooltip>
+                  {/* View Type Switcher (Interactive 3D vs Static Matplotlib) */}
+                  <Group gap="sm">
+                    <SegmentedControl
+                      size="xs"
+                      value={viewMode3d}
+                      onChange={setViewMode3d}
+                      data={[
+                        {
+                          label: (
+                            <Group gap={4}>
+                              <IconRotate3d size={13} />
+                              <span>Interactive 3D</span>
+                            </Group>
+                          ),
+                          value: "interactive",
+                        },
+                        { label: "Static Plot", value: "static" },
+                      ]}
+                    />
+
+                    {/* Static Plot Zoom Controls */}
+                    {viewMode3d === "static" && (
+                      <Group gap={6}>
+                        <Text size="xs" c="dimmed" fw={600}>
+                          Zoom:
+                        </Text>
+                        <Tooltip label="Zoom Out (-25%)">
+                          <ActionIcon
+                            size="sm"
+                            variant="default"
+                            onClick={() =>
+                              setZoom3d((z) => Math.max(0.5, Number((z - 0.25).toFixed(2))))
+                            }
+                            disabled={zoom3d <= 0.5}
+                          >
+                            <IconZoomOut size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Badge
+                          size="sm"
+                          variant="light"
+                          color="blue"
+                          style={{ minWidth: 48, textAlign: "center" }}
+                        >
+                          {Math.round(zoom3d * 100)}%
+                        </Badge>
+                        <Tooltip label="Zoom In (+25%)">
+                          <ActionIcon
+                            size="sm"
+                            variant="default"
+                            onClick={() =>
+                              setZoom3d((z) => Math.min(3.0, Number((z + 0.25).toFixed(2))))
+                            }
+                            disabled={zoom3d >= 3.0}
+                          >
+                            <IconZoomIn size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Reset to Fit">
+                          <ActionIcon
+                            size="sm"
+                            variant="subtle"
+                            color="gray"
+                            onClick={() => setZoom3d(1)}
+                            disabled={zoom3d === 1}
+                          >
+                            <IconZoomReset size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Group>
+                    )}
                   </Group>
 
-                  {/* Actions */}
+                  {/* Actions: Fullscreen & Download */}
                   <Group gap="xs">
                     <Button
                       size="xs"
@@ -170,10 +206,10 @@ export function PlotViewer({ plots }) {
                         openFullscreen(
                           plots.plot_3d_base64,
                           "3D TRA / eTRA Geometry with Mount Positions",
-                          "engine_nvh_3d_geometry.png"
+                          "engine_nvh_3d_geometry.png",
+                          true
                         )
                       }
-                      disabled={!plots.plot_3d_base64}
                     >
                       Inspect Fullscreen
                     </Button>
@@ -192,8 +228,17 @@ export function PlotViewer({ plots }) {
                   </Group>
                 </Group>
 
-                {/* 3D Viewer Box */}
-                {plots.plot_3d_base64 ? (
+                {/* 3D Content: Interactive Three.js or Static Image */}
+                {viewMode3d === "interactive" ? (
+                  <Interactive3DViewer
+                    calcResult={calcResult}
+                    formMounts={formMounts}
+                    height={520}
+                    onDownloadPNG={() =>
+                      handleDownload(plots.plot_3d_base64, "engine_nvh_3d_geometry.png")
+                    }
+                  />
+                ) : plots.plot_3d_base64 ? (
                   <Box
                     style={{
                       width: "100%",
@@ -313,7 +358,7 @@ export function PlotViewer({ plots }) {
                       color="indigo"
                       leftSection={<IconArrowsMaximize size={13} />}
                       onClick={() =>
-                        openFullscreen(activeProjB64, activeProjTitle, activeProjFilename)
+                        openFullscreen(activeProjB64, activeProjTitle, activeProjFilename, false)
                       }
                       disabled={!activeProjB64}
                     >
@@ -401,60 +446,107 @@ export function PlotViewer({ plots }) {
             </Text>
           </Group>
         }
-        size="95%"
+        size="96%"
         radius="md"
         centered
         styles={{
           header: { background: "#161b22", borderBottom: "1px solid #30363d" },
-          body: { background: "#0d1117", padding: "16px" },
+          body: { background: "#0d1117", padding: "14px" },
         }}
       >
-        <Stack gap="md">
-          <Group justify="flex-end">
-            <Button
-              size="xs"
-              variant="light"
-              color="cyan"
-              leftSection={<IconDownload size={14} />}
-              onClick={() => {
-                const link = document.createElement("a");
-                link.href = modalData.src;
-                link.download = modalData.filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }}
-            >
-              Download Full-Res PNG
-            </Button>
+        <Stack gap="sm">
+          {/* Modal Header Controls */}
+          <Group justify="space-between" wrap="wrap" gap="xs">
+            {modalData.is3d ? (
+              <Group gap="xs">
+                <SegmentedControl
+                  size="xs"
+                  value={modal3dMode}
+                  onChange={setModal3dMode}
+                  data={[
+                    {
+                      label: (
+                        <Group gap={4}>
+                          <IconRotate3d size={13} />
+                          <span>Interactive 3D (Rotate, Pan, Zoom)</span>
+                        </Group>
+                      ),
+                      value: "interactive",
+                    },
+                    { label: "Static Matplotlib Plot", value: "static" },
+                  ]}
+                />
+                <Badge size="sm" color="cyan" variant="light">
+                  360° Drag Rotation Enabled
+                </Badge>
+              </Group>
+            ) : (
+              <Text size="xs" c="dimmed">
+                High-Resolution Projection View
+              </Text>
+            )}
+
+            <Group gap="xs">
+              {modalData.src && (
+                <Button
+                  size="xs"
+                  variant="light"
+                  color="cyan"
+                  leftSection={<IconDownload size={14} />}
+                  onClick={() => {
+                    const link = document.createElement("a");
+                    link.href = modalData.src;
+                    link.download = modalData.filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                >
+                  Download Full-Res PNG
+                </Button>
+              )}
+            </Group>
           </Group>
 
-          <Box
-            style={{
-              width: "100%",
-              maxHeight: "80vh",
-              overflow: "auto",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "#16213e",
-              borderRadius: 8,
-              padding: 12,
-            }}
-          >
-            <img
-              src={modalData.src}
-              alt={modalData.title}
-              style={{
-                maxWidth: "100%",
-                height: "auto",
-                maxHeight: "76vh",
-                objectFit: "contain",
-                display: "block",
-                borderRadius: 4,
-              }}
+          {/* Modal Content */}
+          {modalData.is3d && modal3dMode === "interactive" ? (
+            <Interactive3DViewer
+              calcResult={calcResult}
+              formMounts={formMounts}
+              height="78vh"
+              fullscreen={true}
+              onDownloadPNG={() =>
+                handleDownload(plots.plot_3d_base64, "engine_nvh_3d_geometry.png")
+              }
             />
-          </Box>
+          ) : (
+            <Box
+              style={{
+                width: "100%",
+                maxHeight: "80vh",
+                overflow: "auto",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "#16213e",
+                borderRadius: 8,
+                padding: 12,
+              }}
+            >
+              <img
+                src={modalData.src}
+                alt={modalData.title}
+                style={{
+                  maxWidth: "100%",
+                  height: "auto",
+                  maxHeight: "76vh",
+                  objectFit: "contain",
+                  display: "block",
+                  borderRadius: 4,
+                }}
+              />
+            </Box>
+          )}
         </Stack>
       </Modal>
     </>

@@ -142,15 +142,17 @@ export function generateReviewReport(proposals, optimizerForm, settings) {
     // TRA / eTRA
     const tra = p.tra || [0, 1, 0];
     const etra = p.etra || [0, 1, 0];
-    const traYAngle = Math.acos(Math.min(1, Math.max(-1, tra[1] || 1))) * (180 / Math.PI);
-    const etraYAngle = Math.acos(Math.min(1, Math.max(-1, etra[1] || 1))) * (180 / Math.PI);
+    const etraDynamic = p.etra_dynamic || etra;
+    const traYAngle = Math.acos(Math.min(1, Math.max(0, Math.abs(tra[1] || 1)))) * (180 / Math.PI);
+    const etraYAngle = Math.acos(Math.min(1, Math.max(0, Math.abs(etra[1] || 1)))) * (180 / Math.PI);
     const misalign3D = p.angle_3d_deg != null ? p.angle_3d_deg : 0;
     const etraPoint = p.etra_point || cg;
     const offset = p.etra_offset_mm != null ? p.etra_offset_mm : Math.hypot(etraPoint[0] - cg[0], etraPoint[1] - cg[1], etraPoint[2] - cg[2]);
 
     lines.push("TRA / eTRA");
     lines.push(`TRA = ${formatVec(tra, 7)}`);
-    lines.push(`eTRA = ${formatVec(etra, 7)}`);
+    lines.push(`eTRA_static = ${formatVec(etra, 7)}`);
+    lines.push(`eTRA_dynamic_factor = ${formatVec(etraDynamic, 7)}`);
     lines.push(`TRA angle from +Y = ${traYAngle.toFixed(4)} deg`);
     lines.push(`eTRA angle from +Y = ${etraYAngle.toFixed(4)} deg`);
     lines.push(`3D TRA/eTRA misalignment = ${misalign3D.toFixed(4)} deg`);

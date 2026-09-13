@@ -23,6 +23,7 @@ export function ResultsPanel() {
   const robustnessState = useStore((state) => state.robustnessState);
   const robustnessResult = useStore((state) => state.robustnessResult);
   const robustnessError = useStore((state) => state.robustnessError);
+  const form = useStore((state) => state.form);
 
   if (calcState === "loading") {
     return (
@@ -78,7 +79,11 @@ export function ResultsPanel() {
       <ProjectedGeometryTable result={calcResult} />
 
       {/* ── 5. Inline Plots & Download ── */}
-      <PlotViewer plots={calcResult.plots} />
+      <PlotViewer
+        plots={calcResult.plots}
+        calcResult={calcResult}
+        formMounts={form?.mounts}
+      />
 
       {/* ── 6. Robustness Sensitivity Results (if executed) ── */}
       <RobustnessPanel

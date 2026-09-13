@@ -42,8 +42,9 @@ def vector_angle(a, b):
     na, nb = np.linalg.norm(a), np.linalg.norm(b)
     if na < 1e-15 or nb < 1e-15:
         raise ValueError("Cannot calculate angle for a zero-length vector.")
-    c = np.dot(a, b) / (na * nb)
-    return float(np.degrees(np.arccos(np.clip(c, -1.0, 1.0))))
+    # TRA and eTRA are axes, not directed arrows (+u and -u represent the same physical axis)
+    c = abs(float(np.dot(a, b))) / (na * nb)
+    return float(np.degrees(np.arccos(np.clip(c, 0.0, 1.0))))
 
 
 def line_angle_2d(v):
