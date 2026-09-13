@@ -449,6 +449,15 @@ def run_calculation(inputs):
     plot_projected_b64 = _make_projected_plot(CG, TRA_trace, eTRA_trace,
                                               projected_results, plane_defs,
                                               mounts, TRACE_DISTANCES)
+    plot_yz_b64        = _make_single_plane_plot("YZ", CG, TRA_trace, eTRA_trace,
+                                                 projected_results, plane_defs,
+                                                 mounts, TRACE_DISTANCES)
+    plot_xy_b64        = _make_single_plane_plot("XY", CG, TRA_trace, eTRA_trace,
+                                                 projected_results, plane_defs,
+                                                 mounts, TRACE_DISTANCES)
+    plot_zx_b64        = _make_single_plane_plot("ZX", CG, TRA_trace, eTRA_trace,
+                                                 projected_results, plane_defs,
+                                                 mounts, TRACE_DISTANCES)
 
     # ── 10. Robustness (on-demand) ────────────────────────────
     robustness_results = None
@@ -511,6 +520,9 @@ def run_calculation(inputs):
         "plots": {
             "plot_3d_base64": plot_3d_b64,
             "plot_projected_base64": plot_projected_b64,
+            "plot_yz_base64": plot_yz_b64,
+            "plot_xy_base64": plot_xy_b64,
+            "plot_zx_base64": plot_zx_b64,
         },
         "inputs_echo": {
             "mass": MASS,
@@ -576,6 +588,19 @@ def _make_3d_plot(CG, TRA_trace, eTRA_trace, eTRA_nearest_point,
                  color="#e0e0e0", fontsize=13, pad=12)
     ax.legend(facecolor="#1a1a2e", edgecolor="#555", labelcolor="#e0e0e0",
               fontsize=9, loc="best")
+
+    # Tight bounding box framing around engine assembly
+    all_3d = np.vstack([TRA_trace, eTRA_trace, [CG], [eTRA_nearest_point], [m["abs_xyz"] for m in mounts]])
+    x_min, y_min, z_min = np.min(all_3d, axis=0)
+    x_max, y_max, z_max = np.max(all_3d, axis=0)
+    max_range = max(x_max - x_min, y_max - y_min, z_max - z_min) * 0.55
+    mid_x = (x_max + x_min) * 0.5
+    mid_y = (y_max + y_min) * 0.5
+    mid_z = (z_max + z_min) * 0.5
+    ax.set_xlim(mid_x - max_range, mid_x + max_range)
+    ax.set_ylim(mid_y - max_range, mid_y + max_range)
+    ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
     fig.tight_layout()
     return fig_to_base64(fig)
 
@@ -613,10 +638,28 @@ def _make_projected_plot(CG, TRA_trace, eTRA_trace, projected_results,
             ax.annotate(m["name"], mp, xytext=(5, -10),
                         textcoords="offset points", fontsize=8, fontweight="bold", color=col)
 
+        # Bounding box strictly around physical engine components
+        all_pts = np.vstack([
+            tr2,
+            et2,
+            [cg2],
+            [near2],
+            [projection_coords(m["abs_xyz"], plane) for m in mounts]
+        ])
+        x_min, y_min = np.min(all_pts, axis=0)
+        x_max, y_max = np.max(all_pts, axis=0)
+        x_span = max(80.0, x_max - x_min)
+        y_span = max(80.0, y_max - y_min)
+        x_pad = max(40.0, x_span * 0.18)
+        y_pad = max(40.0, y_span * 0.18)
+        xlim = (x_min - x_pad, x_max + x_pad)
+        ylim = (y_min - y_pad, y_max + y_pad)
+
         if r["intersection_2d"] is not None:
             pt = np.array(r["intersection_2d"])
-            ax.scatter(*pt, s=90, marker="x", linewidths=2.5,
-                       color="#ffffff", label="Intersection", zorder=5)
+            if (xlim[0] <= pt[0] <= xlim[1]) and (ylim[0] <= pt[1] <= ylim[1]):
+                ax.scatter(*pt, s=90, marker="x", linewidths=2.5,
+                           color="#ffffff", label="Intersection", zorder=5)
 
         ax.plot([cg2[0], near2[0]], [cg2[1], near2[1]],
                 linestyle=":", lw=1.8, color="#aaaaaa",
@@ -640,12 +683,103 @@ def _make_projected_plot(CG, TRA_trace, eTRA_trace, projected_results,
         ax.grid(True, alpha=0.15, color="#555")
         ax.legend(facecolor="#1a1a2e", edgecolor="#555", labelcolor="#e0e0e0",
                   fontsize=7.5, loc="best")
-        ax.set_aspect("equal", adjustable="datalim")
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        ax.set_aspect("equal", adjustable="box")
         for sp in ax.spines.values():
             sp.set_edgecolor("#444")
 
     fig.suptitle("TRA / eTRA Projected Geometry with All Mount Positions",
                  fontsize=14, fontweight="bold", color="#e0e0e0")
+    fig.tight_layout()
+    return fig_to_base64(fig)
+
+
+def _make_single_plane_plot(plane, CG, TRA_trace, eTRA_trace, projected_results,
+                            plane_defs, mounts, TRACE_DISTANCES):
+    """Generate a high-res, responsive single-plane projection plot (YZ, XY, or ZX)."""
+    fig, ax = plt.subplots(1, 1, figsize=(10, 7), dpi=130, facecolor="#1a1a2e")
+    fig.patch.set_facecolor("#1a1a2e")
+    ax.set_facecolor("#16213e")
+
+    cfg = plane_defs[plane]
+    r   = projected_results[plane]
+
+    mount_colors  = {"M1": "#06d6a0", "M2": "#8338ec", "M3": "#ff9f1c"}
+    mount_markers = {"M1": "^", "M2": "s", "M3": "D"}
+
+    tr2 = np.array([projection_coords(p, plane) for p in TRA_trace])
+    et2 = np.array([projection_coords(p, plane) for p in eTRA_trace])
+
+    ax.plot(tr2[:, 0], tr2[:, 1], "o-",  lw=2.8, color="#4cc9f0", label="TRA")
+    ax.plot(et2[:, 0], et2[:, 1], "o--", lw=2.8, color="#f72585", label="eTRA")
+
+    cg2   = np.array(r["_cg2"])
+    near2 = np.array(r["nearest_point_2d"])
+
+    ax.scatter(*cg2, s=95, color="#ffbe0b", label="Engine CG", zorder=4)
+    ax.scatter(*near2, s=95, color="#fb5607", label="eTRA Nearest Point", zorder=4)
+
+    for m in mounts:
+        mp  = projection_coords(m["abs_xyz"], plane)
+        col = mount_colors.get(m["name"], "#ccc")
+        ax.scatter(mp[0], mp[1], s=110, marker=mount_markers.get(m["name"], "o"),
+                   color=col, label=m["name"], zorder=6)
+        ax.annotate(m["name"], mp, xytext=(7, -10),
+                    textcoords="offset points", fontsize=9, fontweight="bold", color=col)
+
+        # Bounding box strictly around physical engine components
+        all_pts = np.vstack([
+            tr2,
+            et2,
+            [cg2],
+            [near2],
+            [projection_coords(m["abs_xyz"], plane) for m in mounts]
+        ])
+        x_min, y_min = np.min(all_pts, axis=0)
+        x_max, y_max = np.max(all_pts, axis=0)
+        x_span = max(80.0, x_max - x_min)
+        y_span = max(80.0, y_max - y_min)
+        x_pad = max(40.0, x_span * 0.18)
+        y_pad = max(40.0, y_span * 0.18)
+        xlim = (x_min - x_pad, x_max + x_pad)
+        ylim = (y_min - y_pad, y_max + y_pad)
+
+        if r["intersection_2d"] is not None:
+            pt = np.array(r["intersection_2d"])
+            if (xlim[0] <= pt[0] <= xlim[1]) and (ylim[0] <= pt[1] <= ylim[1]):
+                ax.scatter(*pt, s=110, marker="x", linewidths=2.5,
+                           color="#ffffff", label="Intersection", zorder=5)
+
+        ax.plot([cg2[0], near2[0]], [cg2[1], near2[1]],
+                linestyle=":", lw=2.0, color="#aaaaaa",
+                label=f"Nearest offset = {r['nearest_distance_mm']:.1f} mm")
+
+        angle     = r["misalignment_deg"]
+        inter_txt = "Lines intersect" if r["intersection_2d"] is not None else "Lines parallel/coincident"
+        ax.text(0.03, 0.96,
+                f"{cfg['title']} Alignment\nMisalignment = {angle:.3f}°\n{inter_txt}\nOffset from CG = {r['nearest_distance_mm']:.1f} mm",
+                transform=ax.transAxes, va="top", fontsize=9.5, color="#e0e0e0",
+                bbox=dict(boxstyle="round,pad=0.45", facecolor="#0f3460", alpha=0.9, edgecolor="#555"))
+
+        for i, s in enumerate(TRACE_DISTANCES):
+            ax.annotate(f"{s:+.0f}", tr2[i], xytext=(5, 5),
+                        textcoords="offset points", fontsize=8, color="#4cc9f0")
+
+        ax.set_title(f"{cfg['title']} Projection — TRA vs eTRA Trajectory",
+                     color="#e0e0e0", fontsize=12, fontweight="bold", pad=12)
+        ax.set_xlabel(cfg["xlabel"], color="#cccccc", fontsize=10)
+        ax.set_ylabel(cfg["ylabel"], color="#cccccc", fontsize=10)
+        ax.tick_params(colors="#aaaaaa")
+        ax.grid(True, alpha=0.18, color="#444")
+        ax.legend(facecolor="#1a1a2e", edgecolor="#555", labelcolor="#e0e0e0",
+                  fontsize=9, loc="best")
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        ax.set_aspect("equal", adjustable="box")
+        for sp in ax.spines.values():
+            sp.set_edgecolor("#555")
+
     fig.tight_layout()
     return fig_to_base64(fig)
 
