@@ -837,16 +837,7 @@ def run_optimizer(inputs):
         case_summaries.append({
             "case_id": cid,
             "case_name": best[0]["case_name"] if best else f"Case {cid}",
-            "best": [
-                {
-                    "name": r["name"],
-                    "min_purity": r["min_purity"],
-                    "angle_3d_deg": r["angle_3d_deg"],
-                    "min_gap_margin": r["min_gap_margin"],
-                    "feasible": r["feasible"],
-                }
-                for r in best
-            ],
+            "best": best,
         })
 
     top10 = sorted(selected, key=ranking_key)[:OVERALL_TOP_N]

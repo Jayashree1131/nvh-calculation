@@ -1,14 +1,15 @@
 import { useState } from "react";
 import {
   Paper, Stack, Group, Text, Badge, Button, Table, Collapse,
-  SimpleGrid, Box, Divider, ScrollArea, Alert, Tabs,
+  SimpleGrid, Box, Divider, ScrollArea, Alert, Tabs, Menu, ActionIcon, Tooltip,
 } from "@mantine/core";
 import {
   IconTrophy, IconChevronDown, IconChevronUp,
-  IconDownload, IconChartBar, IconCheck, IconX,
+  IconDownload, IconChartBar, IconCheck, IconX, IconFileSpreadsheet, IconFileText,
 } from "@tabler/icons-react";
 import useStore from "../../store/useStore";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { downloadReviewReport } from "../../utils/exportReport";
 
 // ── Verdict color ──────────────────────────────────────────
 function verdictColor(verdict) {
@@ -275,62 +276,212 @@ function ProposalRow({ rank, proposal, medal }) {
 }
 
 
-// ── Helper for CSV export robustness pass count ───────────
-function getRobPass(rb, tol) {
-  if (!rb || typeof rb !== "object") return "";
-  const entry =
-    rb[tol] ||
-    rb[String(tol)] ||
-    rb[`${tol}.0`] ||
-    rb[Object.keys(rb).find((k) => Number(k) === tol)];
-  return entry?.exact_pass != null ? `${entry.exact_pass}/512` : "";
+// ── RFC-4180 CSV escaping ──────────────────────────────────
+function csvEscape(val) {
+  if (val == null || val === undefined) return "";
+  const str = String(val);
+  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
 }
 
-// ── CSV export ─────────────────────────────────────────────
-function exportCSV(top10) {
-  const header = [
-    "Rank", "Name", "Case", "Min Purity %", "TRA/eTRA deg",
-    "eTRA Offset mm", "Min Gap Margin Hz", "Feasible", "Verdict",
-    "5% Exact PASS", "10% Exact PASS", "15% Exact PASS",
-  ].join(",");
+// ── Comprehensive CSV Column Definitions ──────────────────
+const DETAILED_CSV_HEADERS = [
+  "Rank",
+  "Proposal Name",
+  "Case ID",
+  "Case Name",
+  "Overall Feasible",
+  "Verdict",
+  "Min Purity %",
+  "TRA/eTRA 3D Angle (deg)",
+  "eTRA Offset from CG (mm)",
+  "Min Gap Margin (Hz)",
+  // Compliance Checks
+  "Package Check",
+  "Stiffness Ratio Check",
+  "Frequency Check",
+  "Purity Check",
+  "Gap Check",
+  "Identity Check",
+  "TRA Alignment Check",
+  // Mount 1 (LH)
+  "M1 Name", "M1 Axis", "M1 X (mm)", "M1 Y (mm)", "M1 Z (mm)",
+  "M1 Kx (N/mm)", "M1 Ky (N/mm)", "M1 Kz (N/mm)", "M1 Void/Solid (V/S)", "M1 (V+S)/Axial",
+  // Mount 2 (RH)
+  "M2 Name", "M2 Axis", "M2 X (mm)", "M2 Y (mm)", "M2 Z (mm)",
+  "M2 Kx (N/mm)", "M2 Ky (N/mm)", "M2 Kz (N/mm)", "M2 Void/Solid (V/S)", "M2 (V+S)/Axial",
+  // Mount 3 (RR)
+  "M3 Name", "M3 Axis", "M3 X (mm)", "M3 Y (mm)", "M3 Z (mm)",
+  "M3 Kx (N/mm)", "M3 Ky (N/mm)", "M3 Kz (N/mm)", "M3 Void/Solid (V/S)", "M3 (V+S)/Axial",
+  // Modal Analysis (Modes 1 to 6)
+  "Mode 1 Identity", "Mode 1 Freq (Hz)", "Mode 1 Purity %", "Mode 1 Gap (Hz)",
+  "Mode 1 Tx %", "Mode 1 Ty %", "Mode 1 Tz %", "Mode 1 Rx %", "Mode 1 Ry %", "Mode 1 Rz %",
+  "Mode 2 Identity", "Mode 2 Freq (Hz)", "Mode 2 Purity %", "Mode 2 Gap (Hz)",
+  "Mode 2 Tx %", "Mode 2 Ty %", "Mode 2 Tz %", "Mode 2 Rx %", "Mode 2 Ry %", "Mode 2 Rz %",
+  "Mode 3 Identity", "Mode 3 Freq (Hz)", "Mode 3 Purity %", "Mode 3 Gap (Hz)",
+  "Mode 3 Tx %", "Mode 3 Ty %", "Mode 3 Tz %", "Mode 3 Rx %", "Mode 3 Ry %", "Mode 3 Rz %",
+  "Mode 4 Identity", "Mode 4 Freq (Hz)", "Mode 4 Purity %", "Mode 4 Gap (Hz)",
+  "Mode 4 Tx %", "Mode 4 Ty %", "Mode 4 Tz %", "Mode 4 Rx %", "Mode 4 Ry %", "Mode 4 Rz %",
+  "Mode 5 Identity", "Mode 5 Freq (Hz)", "Mode 5 Purity %", "Mode 5 Gap (Hz)",
+  "Mode 5 Tx %", "Mode 5 Ty %", "Mode 5 Tz %", "Mode 5 Rx %", "Mode 5 Ry %", "Mode 5 Rz %",
+  "Mode 6 Identity", "Mode 6 Freq (Hz)", "Mode 6 Purity %", "Mode 6 Gap (Hz)",
+  "Mode 6 Tx %", "Mode 6 Ty %", "Mode 6 Tz %", "Mode 6 Rx %", "Mode 6 Ry %", "Mode 6 Rz %",
+  // Robustness Study
+  "±5% Exact PASS Count", "±5% Exact PASS %", "±5% Random PASS Count", "±5% Random PASS %",
+  "±10% Exact PASS Count", "±10% Exact PASS %", "±10% Random PASS Count", "±10% Random PASS %",
+  "±15% Exact PASS Count", "±15% Exact PASS %", "±15% Random PASS Count", "±15% Random PASS %",
+];
 
-  const rows = top10.map((r, i) => {
-    const rb = r.robustness ?? {};
-    return [
-      i + 1,
-      `"${r.name || ""}"`,
-      r.case_id ?? "",
-      r.min_purity != null ? r.min_purity.toFixed(3) : "",
-      r.angle_3d_deg != null ? r.angle_3d_deg.toFixed(4) : "",
-      r.etra_offset_mm != null ? r.etra_offset_mm.toFixed(2) : "",
-      r.min_gap_margin != null ? r.min_gap_margin.toFixed(4) : "",
-      r.feasible ? "YES" : "NO",
-      `"${r.verdict || ""}"`,
-      getRobPass(rb, 5),
-      getRobPass(rb, 10),
-      getRobPass(rb, 15),
-    ].join(",");
+function formatProposalDetailedRow(p, rank) {
+  const rb = p.robustness ?? {};
+  const getRb = (tol, field) => {
+    const entry =
+      rb[tol] ||
+      rb[String(tol)] ||
+      rb[`${tol}.0`] ||
+      rb[Object.keys(rb).find((k) => Number(k) === tol)];
+    return entry?.[field] ?? "";
+  };
+
+  const mounts = Array.isArray(p.mounts) ? p.mounts : [];
+  const modal = Array.isArray(p.modal) ? p.modal : [];
+
+  const row = [
+    rank,
+    csvEscape(p.name || ""),
+    p.case_id ?? "",
+    csvEscape(p.case_name || (p.case_id ? `Case ${p.case_id}` : "")),
+    p.feasible ? "YES" : "NO",
+    csvEscape(p.verdict || ""),
+    p.min_purity != null ? p.min_purity.toFixed(3) : "",
+    p.angle_3d_deg != null ? p.angle_3d_deg.toFixed(4) : "",
+    p.etra_offset_mm != null ? p.etra_offset_mm.toFixed(3) : "",
+    p.min_gap_margin != null ? p.min_gap_margin.toFixed(4) : "",
+    // Checks
+    p.package_pass ? "PASS" : "FAIL",
+    p.ratio_pass ? "PASS" : "FAIL",
+    p.freq_pass ? "PASS" : "FAIL",
+    p.purity_pass ? "PASS" : "FAIL",
+    p.gap_pass ? "PASS" : "FAIL",
+    p.identity_pass ? "PASS" : "FAIL",
+    p.tra_pass ? "PASS" : "FAIL",
+  ];
+
+  // 3 Mounts
+  for (let mIdx = 0; mIdx < 3; mIdx++) {
+    const m = mounts[mIdx];
+    if (m) {
+      row.push(
+        csvEscape(m.name || `M${mIdx + 1}`),
+        m.axis || "",
+        m.x != null ? m.x : "",
+        m.y != null ? m.y : "",
+        m.z != null ? m.z : "",
+        m.kx != null ? m.kx : "",
+        m.ky != null ? m.ky : "",
+        m.kz != null ? m.kz : "",
+        m.void_solid != null ? m.void_solid : "",
+        m.void_solid_axial != null ? m.void_solid_axial : ""
+      );
+    } else {
+      row.push("", "", "", "", "", "", "", "", "", "");
+    }
+  }
+
+  // 6 Modes
+  for (let modeIdx = 0; modeIdx < 6; modeIdx++) {
+    const m = modal[modeIdx];
+    if (m) {
+      const er = Array.isArray(m.energy_row) ? m.energy_row : [];
+      row.push(
+        m.identity || "",
+        m.freq_hz != null ? m.freq_hz : "",
+        m.purity_pct != null ? m.purity_pct : "",
+        m.gap_hz != null ? m.gap_hz : "",
+        er[0] != null ? er[0] : "",
+        er[1] != null ? er[1] : "",
+        er[2] != null ? er[2] : "",
+        er[3] != null ? er[3] : "",
+        er[4] != null ? er[4] : "",
+        er[5] != null ? er[5] : ""
+      );
+    } else {
+      row.push("", "", "", "", "", "", "", "", "", "");
+    }
+  }
+
+  // Robustness (5%, 10%, 15%)
+  [5, 10, 15].forEach((tol) => {
+    const exactPass = getRb(tol, "exact_pass");
+    const exactTotal = getRb(tol, "exact_total");
+    const exactPct = getRb(tol, "exact_pass_percent");
+    const randPass = getRb(tol, "random_pass");
+    const randTotal = getRb(tol, "random_total");
+    const randPct = getRb(tol, "random_pass_percent");
+
+    row.push(
+      exactPass !== "" ? `${exactPass}/${exactTotal ?? 512}` : "",
+      exactPct !== "" ? `${exactPct}%` : "",
+      randPass !== "" ? `${randPass}/${randTotal ?? 600}` : "",
+      randPct !== "" ? `${randPct}%` : ""
+    );
   });
 
-  const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
+  return row.join(",");
+}
+
+// ── Export function with UTF-8 BOM for Excel / Apple Numbers ──
+function exportProposalsDetailed(proposals, fileCategory = "top10") {
+  if (!proposals || proposals.length === 0) return;
+
+  const headerRow = DETAILED_CSV_HEADERS.join(",");
+  const dataRows = proposals.map((p, i) => formatProposalDetailedRow(p, i + 1));
+  const csvContent = "\uFEFF" + [headerRow, ...dataRows].join("\r\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `optimizer_top10_${Date.now()}.csv`;
+  a.download = `optimizer_${fileCategory}_detailed_${Date.now()}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-
 // ── Main results component ─────────────────────────────────
 export function OptimizerResults() {
   const optimizerResult = useStore((s) => s.optimizerResult);
+  const optimizerForm = useStore((s) => s.optimizerForm);
   const [view, setView] = useState("top10");
 
   if (!optimizerResult) return null;
 
   const { top10 = [], case_summaries = [], all_proposals = [], settings } = optimizerResult;
   const medals = ["🥇", "🥈", "🥉"];
+
+  // Resolve complete proposal data for Best Per Case (supports both legacy and new runs)
+  const bestPerCaseProposals = case_summaries.flatMap((cs) =>
+    (cs.best || []).map((b) => all_proposals.find((p) => p.name === b.name) || b)
+  );
+
+  // Determine active export dataset and label matching the current tab
+  let currentReportLabel = "Export Top 10 Report (.txt)";
+  let currentCsvLabel = "Export Top 10 CSV";
+  let currentExportData = top10;
+  let currentExportCategory = "top10";
+
+  if (view === "bycases") {
+    currentReportLabel = `Export Best Per Case Report (.txt)`;
+    currentCsvLabel = `Export Best Per Case CSV`;
+    currentExportData = bestPerCaseProposals;
+    currentExportCategory = "best_per_case";
+  } else if (view === "all") {
+    currentReportLabel = `Export All Proposals Report (.txt)`;
+    currentCsvLabel = `Export All Proposals CSV`;
+    currentExportData = all_proposals;
+    currentExportCategory = "all_proposals";
+  }
 
   return (
     <Stack gap="md">
@@ -347,11 +498,88 @@ export function OptimizerResults() {
               </Text>
             </div>
           </Group>
-          <Button size="xs" variant="light" color="green"
-            leftSection={<IconDownload size={14} />}
-            onClick={() => exportCSV(top10)}>
-            Export CSV
-          </Button>
+
+          {/* Dynamic Export Controls: Report (.txt) + CSV + Full Dropdown Menu */}
+          <Group gap="xs">
+            <Button
+              size="xs"
+              variant="filled"
+              color="violet"
+              leftSection={<IconFileText size={14} />}
+              onClick={() =>
+                downloadReviewReport(currentExportData, optimizerForm, settings, currentExportCategory)
+              }
+            >
+              {currentReportLabel}
+            </Button>
+
+            <Button
+              size="xs"
+              variant="light"
+              color="green"
+              leftSection={<IconDownload size={14} />}
+              onClick={() => exportProposalsDetailed(currentExportData, currentExportCategory)}
+            >
+              {currentCsvLabel}
+            </Button>
+
+            <Menu position="bottom-end" shadow="md" width={280}>
+              <Menu.Target>
+                <Tooltip label="More export options & datasets">
+                  <ActionIcon size="input-xs" variant="light" color="gray" radius="sm">
+                    <IconChevronDown size={14} />
+                  </ActionIcon>
+                </Tooltip>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Label>Full Case Review Report (.txt)</Menu.Label>
+                <Menu.Item
+                  leftSection={<IconTrophy size={14} color="#f59e0b" />}
+                  onClick={() => downloadReviewReport(top10, optimizerForm, settings, "top10")}
+                >
+                  Top 10 Report (.txt)
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconChartBar size={14} color="#8b5cf6" />}
+                  onClick={() =>
+                    downloadReviewReport(bestPerCaseProposals, optimizerForm, settings, "best_per_case")
+                  }
+                >
+                  Best Per Case Report ({bestPerCaseProposals.length}) (.txt)
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconFileText size={14} color="#a78bfa" />}
+                  onClick={() =>
+                    downloadReviewReport(all_proposals, optimizerForm, settings, "all_proposals")
+                  }
+                >
+                  All Proposals Report ({all_proposals.length}) (.txt)
+                </Menu.Item>
+
+                <Menu.Divider />
+
+                <Menu.Label>Detailed Spreadsheet (.csv)</Menu.Label>
+                <Menu.Item
+                  leftSection={<IconTrophy size={14} color="#f59e0b" />}
+                  onClick={() => exportProposalsDetailed(top10, "top10")}
+                >
+                  Top 10 Ranking CSV ({top10.length})
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconChartBar size={14} color="#8b5cf6" />}
+                  onClick={() => exportProposalsDetailed(bestPerCaseProposals, "best_per_case")}
+                >
+                  Best Per Case CSV ({bestPerCaseProposals.length})
+                </Menu.Item>
+                <Menu.Item
+                  leftSection={<IconFileSpreadsheet size={14} color="#10b981" />}
+                  onClick={() => exportProposalsDetailed(all_proposals, "all_proposals")}
+                >
+                  All Proposals CSV ({all_proposals.length})
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+          </Group>
         </Group>
       </Paper>
 
@@ -406,22 +634,37 @@ export function OptimizerResults() {
                     <Text size="sm" fw={700}>{cs.case_name}</Text>
                     <Badge size="xs" variant="outline" color="violet">Case {cs.case_id}</Badge>
                   </Group>
-                  {cs.best.map((b, bi) => (
-                    <Group key={bi} gap="xs" p="xs"
-                      style={{ background: "#1c2128", borderRadius: 8 }} wrap="nowrap">
-                      <Text size="xs" c="violet" fw={700}>#{bi + 1}</Text>
-                      <Text size="xs" style={{ flex: 1, wordBreak: "break-word" }}>{b.name}</Text>
-                      <Badge size="xs" color={b.min_purity >= 90 ? "teal" : "yellow"}>
-                        {b.min_purity?.toFixed(1)}%
-                      </Badge>
-                      <Badge size="xs" color={b.angle_3d_deg <= 1 ? "teal" : "orange"}>
-                        {b.angle_3d_deg?.toFixed(3)}°
-                      </Badge>
-                      <Badge size="xs" color={b.feasible ? "teal" : "red"}>
-                        {b.feasible ? "Feasible" : "Infeasible"}
-                      </Badge>
-                    </Group>
-                  ))}
+                  <Paper radius="md" withBorder style={{ overflow: "hidden" }}>
+                    <ScrollArea>
+                      <Table verticalSpacing="xs" highlightOnHover>
+                        <Table.Thead style={{ background: "#161b22" }}>
+                          <Table.Tr>
+                            <Table.Th>#</Table.Th>
+                            <Table.Th>Proposal</Table.Th>
+                            <Table.Th>Case</Table.Th>
+                            <Table.Th>Min Purity</Table.Th>
+                            <Table.Th>TRA/eTRA</Table.Th>
+                            <Table.Th>Gap Margin</Table.Th>
+                            <Table.Th>Feasible</Table.Th>
+                            <Table.Th>Verdict</Table.Th>
+                            <Table.Th></Table.Th>
+                          </Table.Tr>
+                        </Table.Thead>
+                        <Table.Tbody>
+                          {(cs.best || []).map((b, bi) => {
+                            const fullProp = all_proposals.find((p) => p.name === b.name) || b;
+                            return (
+                              <ProposalRow
+                                key={bi}
+                                rank={bi + 1}
+                                proposal={fullProp}
+                              />
+                            );
+                          })}
+                        </Table.Tbody>
+                      </Table>
+                    </ScrollArea>
+                  </Paper>
                 </Stack>
               </Paper>
             ))}

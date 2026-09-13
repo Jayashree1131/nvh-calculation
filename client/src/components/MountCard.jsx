@@ -9,8 +9,8 @@ import {
   Stack,
   Tooltip,
 } from "@mantine/core";
-import { IconTrash, IconAdjustments } from "@tabler/icons-react";
 import useStore from "../store/useStore";
+import { sanitizeNumericInput } from "../utils/validators";
 
 const MOUNT_COLORS = ["blue", "teal", "grape", "orange", "cyan"];
 
@@ -22,8 +22,10 @@ export function MountCard({ mount, index, totalMounts }) {
   const color = MOUNT_COLORS[index % MOUNT_COLORS.length];
 
   const handleNumChange = (field, val) => {
-    const num = parseFloat(val);
-    updateMount(index, field, isNaN(num) ? "" : num);
+    const clean = sanitizeNumericInput(val);
+    if (clean !== null) {
+      updateMount(index, field, clean);
+    }
   };
 
   const handleRemove = () => {
@@ -133,7 +135,7 @@ export function MountCard({ mount, index, totalMounts }) {
                 key={key}
                 size="xs"
                 label={label}
-                value={mount[key] ?? 0}
+                value={mount[key] ?? ""}
                 onChange={(e) => handleNumChange(key, e.currentTarget.value)}
                 styles={{ input: { fontFamily: "monospace" } }}
               />

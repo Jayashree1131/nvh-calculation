@@ -31,6 +31,7 @@ import useStore from "../store/useStore";
 import { useCalculate, useRobustness } from "../hooks/useCalculate";
 import { InertiaTensorGrid } from "./InertiaTensorGrid";
 import { MountCard } from "./MountCard";
+import { sanitizeNumericInput } from "../utils/validators";
 
 export function InputPanel() {
   const [activeTab, setActiveTab] = useState("constants");
@@ -47,17 +48,21 @@ export function InputPanel() {
   const { runRobustness } = useRobustness();
 
   const handleNumChange = (field, val) => {
-    const num = parseFloat(val);
-    setForm((prev) => ({ ...prev, [field]: isNaN(num) ? "" : num }));
+    const clean = sanitizeNumericInput(val);
+    if (clean !== null) {
+      setForm((prev) => ({ ...prev, [field]: clean }));
+    }
   };
 
   const handleCgChange = (idx, val) => {
-    const num = parseFloat(val);
-    setForm((prev) => {
-      const cg = [...prev.cg];
-      cg[idx] = isNaN(num) ? "" : num;
-      return { ...prev, cg };
-    });
+    const clean = sanitizeNumericInput(val);
+    if (clean !== null) {
+      setForm((prev) => {
+        const cg = [...prev.cg];
+        cg[idx] = clean;
+        return { ...prev, cg };
+      });
+    }
   };
 
   const handleAddMount = () => {

@@ -77,7 +77,7 @@ export function validateInputs(form) {
     errors.mounts = "Exactly 3 mounts are required.";
   } else {
     form.mounts.forEach((m, idx) => {
-      const prefix = `mounts_${idx}`;
+      const prefix = `mount_${idx}`;
       ["x", "y", "z"].forEach((coord) => {
         const val = Number(m[coord]);
         if (m[coord] === "" || m[coord] === null || isNaN(val) || !isFinite(val)) {
@@ -94,6 +94,21 @@ export function validateInputs(form) {
   }
 
   return errors;
+}
+
+/**
+ * Sanitizes numeric input while typing:
+ * Allows empty, minus, dot, trailing dots/zeros, negative floats, and exponent notation.
+ * Replaces commas with dots.
+ * Returns null if the string contains invalid characters (rejecting the input).
+ */
+export function sanitizeNumericInput(rawVal) {
+  if (rawVal === "" || rawVal === null || rawVal === undefined) return "";
+  const val = String(rawVal).trim().replace(",", ".");
+  if (/^-?\d*\.?\d*(?:[eE][-+]?\d*)?$/.test(val)) {
+    return val;
+  }
+  return null;
 }
 
 export function hasBlockingErrors(errors) {

@@ -1,5 +1,6 @@
 import { Paper, Text, TextInput, SimpleGrid, Group, Badge, Tooltip } from "@mantine/core";
 import useStore from "../store/useStore";
+import { sanitizeNumericInput } from "../utils/validators";
 
 const AXIS_LABELS = ["X", "Y", "Z"];
 
@@ -9,8 +10,10 @@ export function InertiaTensorGrid() {
   const validationErrors = useStore((state) => state.validationErrors);
 
   const handleChange = (r, c, val) => {
-    const num = parseFloat(val);
-    updateInertia(r, c, isNaN(num) ? "" : num);
+    const clean = sanitizeNumericInput(val);
+    if (clean !== null) {
+      updateInertia(r, c, clean);
+    }
   };
 
   return (
